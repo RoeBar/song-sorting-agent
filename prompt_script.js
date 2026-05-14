@@ -20,10 +20,8 @@ function SendPrompt(event) {
         console.log('Response from server:', data);
         // re-enable the submit button
         gotResponse();
-        // song lists is either 2 or the value we got from the server
-        const songLists = data.songLists || 2;
         // redirect to the song list page with the song lists as a query parameter
-        window.location.href = `playlist_descriptions.html?songLists=${songLists}`;
+        window.location.href = `playlist_select.html`;
     })
     .catch(error => {
         console.error('Error:', error);
