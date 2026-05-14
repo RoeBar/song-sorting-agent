@@ -13,44 +13,145 @@
             <h2>Your Playlist Descriptions</h2>
             <p>Here you can describe your playlists.</p>
             <!-- Playlist descriptions will be populated dynamically -->
-            <div class="songlist-container">
-        </div>
-        <!-- A submit button and reject button next to each other -->
-        <div class="submit-container" style="align-items: center; display: flex; justify-content: center; gap: 1em; margin-top: 1em;">
-            <button class="submit-btn" onclick="submitDescriptions()">Submit Descriptions</button>
-            <button class="reject-btn" onclick="rejectDescriptions()">Reject and Go Back</button>
+            <div class="songlist-container"></div>
+            <div class="submit-container" style="align-items: center; display: flex; justify-content: center; gap: 1em; margin-top: 1em;">
+                <button type="button" class="submit-btn" onclick="submitDescriptions()">Submit Descriptions</button>
+                <button type="button" class="reject-btn" onclick="rejectDescriptions()">Reject and Go Back</button>
+            </div>
+            <p id="sort-status" class="empty-hint" style="display: none; text-align: center; margin-top: 0.75em;" aria-live="polite"></p>
+            <div id="sort-results"></div>
         </div>
     </div>
 </body>
 <script>
     // This script will run when the page loads
     document.addEventListener('DOMContentLoaded', () => {
-        // fetch the song descriptions from the server and create textareas dynamically
+        const container = document.querySelector('.songlist-container');
         fetch('http://localhost:3000/playlist_descriptions')
-            .then(response => response.json())
-            .then(data => {
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    console.error('playlist_descriptions request failed:', data);
+                    container.innerHTML = '<p class="empty-hint">Could not load descriptions from the server.</p>';
+                    return;
+                }
                 const descriptions = data.descriptions || [];
-                const container = document.querySelector('.songlist-container');
-                
-                // Create a textarea for each description received
-                descriptions.forEach((description, index) => {
+                if (descriptions.length === 0) {
+                    container.innerHTML =
+                        '<p class="empty-hint">No descriptions yet. On the prompt page, submit your sorting criteria after you have logged in and selected output playlists.</p>';
+                    return;
+                }
+
+                descriptions.forEach((item, index) => {
                     const listDiv = document.createElement('div');
-                    listDiv.innerHTML = `<h3 class="song-description">Playlist Description ${index + 1}</h3><textarea rows="10" cols="50" placeholder="Enter description for this playlist..."></textarea>`;
+                    const isObj = item && typeof item === 'object' && !Array.isArray(item);
+                    const title = isObj ? (item.name || 'Playlist') : `Playlist ${index + 1}`;
+                    const descText = isObj ? (item.description || '') : String(item || '');
+                    const playlistId = isObj ? (item.playlist_id || '') : '';
+
+                    const heading = document.createElement('h3');
+                    heading.className = 'song-description';
+                    heading.textContent = title;
+
+                    const textarea = document.createElement('textarea');
+                    textarea.rows = 10;
+                    textarea.cols = 50;
+                    textarea.placeholder = 'Enter description for this playlist...';
+                    textarea.value = descText;
+                    if (playlistId) {
+                        textarea.dataset.playlistId = playlistId;
+                    }
+
+                    listDiv.appendChild(heading);
+                    listDiv.appendChild(textarea);
                     container.appendChild(listDiv);
-                    
-                    // Populate the textarea with the description
-                    const textarea = listDiv.querySelector('textarea');
-                    textarea.value = description;
                 });
             })
-            .catch(error => {
+            .catch((error) => {
                 console.error('Error fetching playlist descriptions:', error);
+                container.innerHTML = '<p class="empty-hint">Could not load descriptions.</p>';
             });
     });
+
+    function formatSongLine(song) {
+        const artists = Array.isArray(song.artists) ? song.artists.filter(Boolean).join(', ') : '';
+        const name = song.name != null && String(song.name).trim() !== '' ? song.name : '(unknown title)';
+        return artists ? `${name} — ${artists}` : name;
+    }
+
+    function renderSortResults(result) {
+        const el = document.getElementById('sort-results');
+        if (!el || !result) {
+            return;
+        }
+        el.innerHTML = '';
+        const mainTitle = document.createElement('h2');
+        mainTitle.className = 'song-description';
+        mainTitle.textContent = 'Sorted results';
+        el.appendChild(mainTitle);
+
+        (result.playlists || []).forEach((pl) => {
+            const section = document.createElement('section');
+            section.className = 'sort-playlist-block';
+            const h3 = document.createElement('h3');
+            h3.textContent = pl.name || pl.playlist_id || 'Playlist';
+            section.appendChild(h3);
+            const songs = pl.songs || [];
+            if (songs.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'empty-hint';
+                empty.textContent = 'No songs matched this playlist.';
+                section.appendChild(empty);
+            } else {
+                const ul = document.createElement('ul');
+                songs.forEach((song) => {
+                    const li = document.createElement('li');
+                    li.textContent = formatSongLine(song);
+                    ul.appendChild(li);
+                });
+                section.appendChild(ul);
+            }
+            el.appendChild(section);
+        });
+
+        const unmatched = result.unmatched || [];
+        if (unmatched.length > 0) {
+            const section = document.createElement('section');
+            section.className = 'sort-playlist-block';
+            const h3 = document.createElement('h3');
+            h3.textContent = 'Not placed in any playlist';
+            section.appendChild(h3);
+            const ul = document.createElement('ul');
+            unmatched.forEach((song) => {
+                const li = document.createElement('li');
+                li.textContent = formatSongLine(song);
+                ul.appendChild(li);
+            });
+            section.appendChild(ul);
+            el.appendChild(section);
+        }
+    }
+
     function submitDescriptions() {
+        const submitBtn = document.querySelector('.submit-btn');
+        const statusEl = document.getElementById('sort-status');
         const textareas = document.querySelectorAll('.songlist-container textarea');
-        const descriptions = Array.from(textareas).map(textarea => textarea.value);
-        // send the descriptions to the server
+        const descriptions = Array.from(textareas).map((textarea) => ({
+            playlist_id: textarea.dataset.playlistId || '',
+            description: textarea.value
+        }));
+        const missingId = descriptions.some((row) => !row.playlist_id);
+        if (missingId) {
+            alert('Missing playlist id on a row. Reload the page and try again.');
+            return;
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+        if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.textContent = 'Sorting…';
+        }
         fetch('http://localhost:3000/submit_descriptions', {
             method: 'POST',
             headers: {
@@ -58,15 +159,36 @@
             },
             body: JSON.stringify({ descriptions })
         })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Response from server:', data);
-            alert('Descriptions submitted successfully!');
-        })
-        .catch(error => {
-            console.error('Error submitting descriptions:', error);
-            alert('Error submitting descriptions. Please try again.');
-        });
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                console.log('Response from server:', data);
+                if (!ok) {
+                    alert(data.message || 'Submit failed. Please try again.');
+                    return;
+                }
+                if (data.result) {
+                    renderSortResults(data.result);
+                    const resultsEl = document.getElementById('sort-results');
+                    if (resultsEl) {
+                        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } else {
+                    alert(data.message || 'Descriptions submitted.');
+                }
+            })
+            .catch((error) => {
+                console.error('Error submitting descriptions:', error);
+                alert('Error submitting descriptions. Please try again.');
+            })
+            .finally(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                }
+                if (statusEl) {
+                    statusEl.style.display = 'none';
+                    statusEl.textContent = '';
+                }
+            });
     }
 
     function rejectDescriptions() {

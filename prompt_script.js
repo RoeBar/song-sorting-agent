@@ -15,24 +15,29 @@ function SendPrompt(event) {
         },
         body: JSON.stringify({ prompt: criteria })
     })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Response from server:', data);
-        // re-enable the submit button
-        gotResponse();
-        // redirect to the song list page
-        window.location.href = `playlist_descriptions.html`;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
+        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            console.log('Response from server:', data);
+            if (!ok || !data.ok) {
+                gotResponse();
+                alert(data.message || 'Could not generate descriptions. Please try again.');
+                return;
+            }
+            gotResponse();
+            window.location.href = 'playlist_descriptions.html';
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            gotResponse();
+            alert('Network error. Please try again.');
+        });
 }
 
 function waitingResponse() {
     const submitBtn = document.querySelector('.submit-btn');
     submitBtn.disabled = true;
     submitBtn.value = 'Processing...';
-    criteria = document.getElementById('criteria')
+    const criteria = document.getElementById('criteria');
     // clear the textarea
     criteria.value = '';
     criteria.disabled = true;

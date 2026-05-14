@@ -1,11 +1,10 @@
 import argparse
 import json
-import os
 import sys
 
-import google.generativeai as genai
 from dotenv import load_dotenv
 
+from openrouter_llm import chat_json
 from playlist_describer import create_playlist_descriptions
 
 load_dotenv()
@@ -40,17 +39,6 @@ def generate_suggested_prompt(
     playlists_json_canonical: str,
     playlists_count: int,
 ) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
-
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=_MUSIC_ANALYST_SYSTEM_INSTRUCTION,
-    )
-
     user_message = f"""
 Output EXACTLY one JSON object and nothing else. The object must have exactly this shape:
 {{"suggested_prompt": "The single best sorting instruction here"}}
@@ -68,18 +56,7 @@ Target playlists (JSON):
 {playlists_json_canonical}
 """
 
-    generation_config = genai.GenerationConfig(
-        response_mime_type="application/json",
-    )
-
-    response = model.generate_content(
-        user_message,
-        generation_config=generation_config,
-    )
-
-    text = (response.text or "").strip()
-    if not text:
-        raise RuntimeError("Gemini returned an empty response for the Music Analyst step.")
+    text = chat_json(_MUSIC_ANALYST_SYSTEM_INSTRUCTION, user_message)
 
     try:
         payload = json.loads(text)
