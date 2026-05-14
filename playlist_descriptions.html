@@ -25,33 +25,28 @@
 <script>
     // This script will run when the page loads
     document.addEventListener('DOMContentLoaded', () => {
-        // Get the song lists from the query parameter
-        const urlParams = new URLSearchParams(window.location.search);
-        const songLists = urlParams.get('songLists') || 2; // default to 2 if not provided
-
-        const container = document.querySelector('.songlist-container');
-        // each song list will be a textarea with the name of the song list as the title
-        for (let i = 1; i <= songLists; i++) {
-            const listDiv = document.createElement('div');
-            listDiv.innerHTML = `<h3 class="song-description">Playlist Description ${i}</h3><textarea rows="10" cols="50" placeholder="Enter description for this playlist..."></textarea>`;
-            container.appendChild(listDiv);
-        }
-    });
-    // fetch the song descriptions from the server and populate the textareas with the descriptions
-    fetch('http://localhost:3000/playlist_descriptions')
-        .then(response => response.json())
-        .then(data => {
-            const descriptions = data.descriptions || [];
-            const textareas = document.querySelectorAll('.songlist-container textarea');
-            textareas.forEach((textarea, index) => {
-                if (descriptions[index]) {
-                    textarea.value = descriptions[index];
-                }
+        // fetch the song descriptions from the server and create textareas dynamically
+        fetch('http://localhost:3000/playlist_descriptions')
+            .then(response => response.json())
+            .then(data => {
+                const descriptions = data.descriptions || [];
+                const container = document.querySelector('.songlist-container');
+                
+                // Create a textarea for each description received
+                descriptions.forEach((description, index) => {
+                    const listDiv = document.createElement('div');
+                    listDiv.innerHTML = `<h3 class="song-description">Playlist Description ${index + 1}</h3><textarea rows="10" cols="50" placeholder="Enter description for this playlist..."></textarea>`;
+                    container.appendChild(listDiv);
+                    
+                    // Populate the textarea with the description
+                    const textarea = listDiv.querySelector('textarea');
+                    textarea.value = description;
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching playlist descriptions:', error);
             });
-        })
-        .catch(error => {
-            console.error('Error fetching playlist descriptions:', error);
-        });
+    });
     function submitDescriptions() {
         const textareas = document.querySelectorAll('.songlist-container textarea');
         const descriptions = Array.from(textareas).map(textarea => textarea.value);

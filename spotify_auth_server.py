@@ -162,15 +162,19 @@ def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
     prompts.append(stored_prompt)
     print("Received prompt:", stored_prompt["text"])
     # WIP: Wait for the agent to fetch the descriptions, then send to the client
-    return {"message": "Prompt received successfully", "prompt": stored_prompt}
+    return len(selected_output_playlists)
 
 
 @app.get("/playlist_descriptions")
-def playlist_descriptions(
-    songLists: str | None = Query(default=None),
-) -> dict[str, Any]:
-    value: Any = songLists if songLists else len(selected_output_playlists)
-    return {"songLists": value}
+def playlist_descriptions():
+    # make a json out of the selected output playlists for now, but eventually, the agent should use descriptions
+    for val in selected_output_playlists:
+        if isinstance(val, dict) and "id" in val:
+            pid = val["id"]
+            desc = playlist_items_urls.get(pid, "No description available")
+            print(f"Description for playlist {pid}: {desc}")
+    return JSONResponse(content={"descriptions": selected_output_playlists})
+
 
 
 @app.get("/playlists", response_model=None)
