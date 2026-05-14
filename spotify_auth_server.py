@@ -6,6 +6,8 @@ from typing import Any
 from urllib.parse import quote
 
 from parsed_songs import Parsed_song
+from playlist_describer import create_playlist_descriptions
+from sort_songs import sort_songs as run_song_sort
 import requests
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, Query
@@ -31,6 +33,12 @@ selected_output_playlists: list[str] = []
 playlist_songs_dict: dict[str, Any] = {}
 
 playlist_items_urls: dict[str, str] = {}
+playlist_id_to_name: dict[str, str] = {}
+
+# AI-generated rows: {playlist_id, name, description}; order matches output selection when possible
+generated_playlist_descriptions: list[dict[str, Any]] = []
+# User-confirmed text after playlist_descriptions.html submit
+final_playlist_descriptions: dict[str, str] = {}
 
 songs_to_playlist_mapping: dict[str, list[str]] = {}
 
@@ -59,6 +67,7 @@ def fetch_user_playlists(access_token: str) -> requests.Response:
         playlist_id = playlist["id"]
         playlist_name = playlist["name"]
         playlist_items_urls[playlist_id] = playlist["href"]
+        playlist_id_to_name[playlist_id] = playlist_name
     return result
 
 def fetch_playlist_tracks(access_token: str, playlist_id: str) -> requests.Response:
@@ -74,6 +83,46 @@ def fetch_playlist_tracks(access_token: str, playlist_id: str) -> requests.Respo
             songs_to_playlist_mapping[song_id] = []
         songs_to_playlist_mapping[song_id].append(playlist_id)
     return response
+
+
+def _normalize_playlist_id(entry: Any) -> str | None:
+    if isinstance(entry, dict):
+        pid = entry.get("id")
+        return str(pid).strip() if pid else None
+    if isinstance(entry, str) and entry.strip():
+        return entry.strip()
+    return None
+
+
+def _song_to_llm_dict(s: Parsed_song) -> dict[str, Any]:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "artists": s.artists or [],
+        "album_id": s.album_id,
+        "duration_ms": s.duration_ms,
+    }
+
+
+def _collect_deduped_input_songs() -> tuple[list[dict[str, Any]], dict[str, Parsed_song]]:
+    by_id: dict[str, Parsed_song] = {}
+    for entry in selected_input_playlists:
+        playlist_id = _normalize_playlist_id(entry)
+        if not playlist_id:
+            continue
+        tracks = playlist_songs_dict.get(playlist_id, [])
+        if not isinstance(tracks, list):
+            continue
+        for t in tracks:
+            if not isinstance(t, Parsed_song):
+                continue
+            tid = t.id
+            if not tid:
+                continue
+            tid_s = str(tid)
+            if tid_s not in by_id:
+                by_id[tid_s] = t
+    return [_song_to_llm_dict(s) for s in by_id.values()], by_id
 
 
 def post_message_target(state: str | None) -> str:
@@ -146,11 +195,27 @@ def callback(
 
 @app.post("/prompt", response_model=None)
 def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
+    global generated_playlist_descriptions
+
     prompt_text = body.get("prompt") or body.get("userPrompt")
     if not prompt_text or not str(prompt_text).strip():
         return JSONResponse(
             status_code=400,
             content={"message": "Prompt is required"},
+        )
+
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+
+    if not selected_output_playlists:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "No output playlists selected. Complete playlist selection first.",
+            },
         )
 
     stored_prompt = {
@@ -161,19 +226,233 @@ def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
     }
     prompts.append(stored_prompt)
     print("Received prompt:", stored_prompt["text"])
-    # WIP: Wait for the agent to fetch the descriptions, then send to the client
-    return len(selected_output_playlists)
+
+    output_ids: list[str] = []
+    for entry in selected_output_playlists:
+        pid = _normalize_playlist_id(entry)
+        if pid:
+            output_ids.append(pid)
+
+    if not output_ids:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "No valid output playlist IDs."},
+        )
+
+    target_for_model: list[dict[str, str]] = []
+    for pid in output_ids:
+        name = playlist_id_to_name.get(pid, "Unknown playlist")
+        target_for_model.append({"playlist_id": pid, "name": name})
+
+    try:
+        raw = create_playlist_descriptions(
+            stored_prompt["text"], json.dumps(target_for_model)
+        )
+        parsed = json.loads(raw)
+    except RuntimeError as e:
+        return JSONResponse(status_code=502, content={"message": str(e)})
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Model returned invalid JSON."},
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=502,
+            content={"message": f"Description generation failed: {e}"},
+        )
+
+    if not isinstance(parsed, list) or len(parsed) == 0:
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Empty model response."},
+        )
+
+    if (
+        len(parsed) == 1
+        and isinstance(parsed[0], dict)
+        and parsed[0].get("error")
+    ):
+        return JSONResponse(
+            status_code=400,
+            content={"message": parsed[0].get("error", "Request rejected.")},
+        )
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        rid = row.get("playlist_id")
+        if not rid:
+            continue
+        rid_s = str(rid)
+        by_id[rid_s] = {
+            "playlist_id": rid_s,
+            "name": row.get("name")
+            or playlist_id_to_name.get(rid_s, "Unknown playlist"),
+            "description": (row.get("description") or "").strip(),
+        }
+
+    ordered: list[dict[str, Any]] = []
+    for pid in output_ids:
+        if pid in by_id:
+            ordered.append(by_id[pid])
+        else:
+            ordered.append(
+                {
+                    "playlist_id": pid,
+                    "name": playlist_id_to_name.get(pid, "Unknown playlist"),
+                    "description": "",
+                }
+            )
+
+    generated_playlist_descriptions = ordered
+    return {"ok": True, "count": len(ordered)}
 
 
 @app.get("/playlist_descriptions")
-def playlist_descriptions():
-    # make a json out of the selected output playlists for now, but eventually, the agent should use descriptions
-    for val in selected_output_playlists:
-        if isinstance(val, dict) and "id" in val:
-            pid = val["id"]
-            desc = playlist_items_urls.get(pid, "No description available")
-            print(f"Description for playlist {pid}: {desc}")
-    return JSONResponse(content={"descriptions": selected_output_playlists})
+def playlist_descriptions() -> JSONResponse:
+    return JSONResponse(content={"descriptions": generated_playlist_descriptions})
+
+
+@app.post("/submit_descriptions", response_model=None)
+def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
+    global final_playlist_descriptions
+
+    rows = body.get("descriptions")
+    if not isinstance(rows, list):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "descriptions must be a list"},
+        )
+
+    out: dict[str, str] = {}
+    for item in rows:
+        if not isinstance(item, dict):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Each entry must be an object with playlist_id and description",
+                },
+            )
+        pid = item.get("playlist_id")
+        desc = item.get("description", "")
+        if pid is None or not str(pid).strip():
+            return JSONResponse(
+                status_code=400,
+                content={"message": "Each entry needs a non-empty playlist_id"},
+            )
+        out[str(pid).strip()] = str(desc) if desc is not None else ""
+
+    final_playlist_descriptions = out
+
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+
+    songs_list, song_lookup = _collect_deduped_input_songs()
+    if not songs_list:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "No songs loaded from input playlists. Go back and select input playlists again.",
+            },
+        )
+
+    output_ids_ordered: list[str] = []
+    for entry in selected_output_playlists:
+        pid = _normalize_playlist_id(entry)
+        if pid and pid in out and pid not in output_ids_ordered:
+            output_ids_ordered.append(pid)
+    for pid in out:
+        if pid not in output_ids_ordered:
+            output_ids_ordered.append(pid)
+
+    playlists_json: list[dict[str, str]] = []
+    for pid in output_ids_ordered:
+        playlists_json.append(
+            {
+                "playlist_id": pid,
+                "name": playlist_id_to_name.get(pid, "Unknown playlist"),
+                "description": out[pid],
+            }
+        )
+
+    try:
+        raw_sort = run_song_sort(
+            json.dumps(playlists_json),
+            json.dumps(songs_list),
+        )
+        parsed_sort = json.loads(raw_sort)
+    except RuntimeError as e:
+        return JSONResponse(status_code=502, content={"message": str(e)})
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Sort model returned invalid JSON."},
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=502,
+            content={"message": f"Song sorting failed: {e}"},
+        )
+
+    if not isinstance(parsed_sort, dict):
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Sort model returned invalid JSON shape."},
+        )
+
+    matched_union: set[str] = set()
+    for v in parsed_sort.values():
+        if isinstance(v, list):
+            for sid in v:
+                if sid is not None:
+                    matched_union.add(str(sid))
+
+    def _song_payload(ps: Parsed_song) -> dict[str, Any]:
+        return {
+            "id": ps.id,
+            "name": ps.name,
+            "artists": ps.artists or [],
+        }
+
+    result_playlists: list[dict[str, Any]] = []
+    for pid in output_ids_ordered:
+        ids = parsed_sort.get(pid)
+        if not isinstance(ids, list):
+            ids = []
+        songs_out: list[dict[str, Any]] = []
+        for sid in ids:
+            sid_s = str(sid)
+            ps = song_lookup.get(sid_s)
+            if ps:
+                songs_out.append(_song_payload(ps))
+            else:
+                songs_out.append({"id": sid_s, "name": None, "artists": []})
+        result_playlists.append(
+            {
+                "playlist_id": pid,
+                "name": playlist_id_to_name.get(pid, "Unknown playlist"),
+                "songs": songs_out,
+            }
+        )
+
+    unmatched: list[dict[str, Any]] = []
+    for sid, ps in song_lookup.items():
+        if sid not in matched_union:
+            unmatched.append(_song_payload(ps))
+
+    return {
+        "ok": True,
+        "message": "Descriptions saved and songs sorted.",
+        "result": {
+            "playlists": result_playlists,
+            "unmatched": unmatched,
+        },
+    }
 
 
 
@@ -202,7 +481,8 @@ def select_playlist_tracks() -> dict[str, Any]:
 @app.post("/selected_playlists", response_model=None)
 def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
     global selected_input_playlists, selected_output_playlists
-    
+    global generated_playlist_descriptions, final_playlist_descriptions
+
     input_ids = body.get("input", [])
     output_ids = body.get("output", [])
     
@@ -215,6 +495,8 @@ def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any
     # store the raw selections as received (could be list[str] or list[dict])
     selected_input_playlists = input_ids
     selected_output_playlists = output_ids
+    generated_playlist_descriptions = []
+    final_playlist_descriptions = {}
 
     if not stored_access_token:
         return JSONResponse(

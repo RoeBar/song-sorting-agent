@@ -1,16 +1,12 @@
-import os
 import argparse
-import google.generativeai as genai
 from dotenv import load_dotenv
+
+from openrouter_llm import chat_json
+
 load_dotenv()
 
-api_key = os.environ.get("GEMINI_API_KEY")
-if not api_key:
-    raise RuntimeError("API_KEY is not set. Add it to your .env file.")
-def sort_songs(playlists_json_str, songs_json_str):
-    # Securely load the API key from environment variables
-    genai.configure(api_key=api_key)
 
+def sort_songs(playlists_json_str, songs_json_str):
     # Assign the model its precise role and rules using System Instructions
     system_instruction = """
     You are an automated song sorting agent.
@@ -24,12 +20,6 @@ def sort_songs(playlists_json_str, songs_json_str):
     Return a strict, raw JSON object. The keys of this JSON object must be the `playlist_id`s, and the values must be arrays containing the `song_id`s of the songs that were matched to that specific playlist.
     """
 
-    # Initialize the specific model with the system instructions
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_instruction
-    )
-
     # Prepare the prompt with the raw JSON string inputs
     prompt = f"""
     Target Playlists:
@@ -39,19 +29,7 @@ def sort_songs(playlists_json_str, songs_json_str):
     {songs_json_str}
     """
 
-    # Configure the API request to return a clean JSON format
-    generation_config = genai.GenerationConfig(
-        response_mime_type="application/json"
-    )
-
-    # Generate the structured output
-    response = model.generate_content(
-        prompt,
-        generation_config=generation_config
-    )
-
-    # Return the raw JSON object
-    return response.text
+    return chat_json(system_instruction, prompt)
 
 
 if __name__ == "__main__":

@@ -1,19 +1,13 @@
-import os
 import argparse
-import google.generativeai as genai
 from dotenv import load_dotenv
+
+from openrouter_llm import chat_json
 
 # Load environment variables
 load_dotenv()
 
 
 def create_playlist_descriptions(user_prompt, playlists_json_str):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("API_KEY is not set. Add it to your .env file.")
-
-    genai.configure(api_key=api_key)
-
     # 1. Strict System Instructions & Security Guardrails
     system_instruction = """
     You are a strict Playlist Architect. 
@@ -32,13 +26,7 @@ def create_playlist_descriptions(user_prompt, playlists_json_str):
     - "description": (Write a clear, strict, 1-2 sentence rule explaining exactly what musical criteria a song needs to be added to this playlist, based on the User Prompt).
     """
 
-    # 2. Initialize the Model
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=system_instruction
-    )
-
-    # 3. Format the Input for the Model
+    # 2. Format the Input for the Model
     prompt = f"""
     User Prompt:
     {user_prompt}
@@ -47,18 +35,7 @@ def create_playlist_descriptions(user_prompt, playlists_json_str):
     {playlists_json_str}
     """
 
-    # 4. Force strict JSON Output
-    generation_config = genai.GenerationConfig(
-        response_mime_type="application/json"
-    )
-
-    # 5. Execute the generation
-    response = model.generate_content(
-        prompt,
-        generation_config=generation_config
-    )
-
-    return response.text
+    return chat_json(system_instruction, prompt)
 
 
 if __name__ == "__main__":
