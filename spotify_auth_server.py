@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
+from parsed_songs import Parsed_song
 import requests
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, Query
@@ -26,6 +27,12 @@ playlists: list[Any] = []
 stored_access_token: str | None = None
 selected_input_playlists: list[str] = []
 selected_output_playlists: list[str] = []
+# store the playlist song dicttionary here after fetching, so the agent can access without needing to wait for the client to resend
+playlist_songs_dict: dict[str, Any] = {}
+
+playlist_items_urls: dict[str, str] = {}
+
+songs_to_playlist_mapping: dict[str, list[str]] = {}
 
 app = FastAPI()
 
@@ -46,15 +53,27 @@ def fetch_user_playlists(access_token: str) -> requests.Response:
         timeout=60,
     )
     
-    print(result.text) 
+    print(result.text)
+    # also store the playlists name and items in a dict 
+    for playlist in result.json().get("items", []):
+        playlist_id = playlist["id"]
+        playlist_name = playlist["name"]
+        playlist_items_urls[playlist_id] = playlist["href"]
     return result
 
 def fetch_playlist_tracks(access_token: str, playlist_id: str) -> requests.Response:
-    return requests.get(
+    response = requests.get(
         f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=60,
     )
+    # also build the song to playlist mapping
+    for item in response.json().get("items", []):
+        song_id = item["track"]["id"]
+        if song_id not in songs_to_playlist_mapping:
+            songs_to_playlist_mapping[song_id] = []
+        songs_to_playlist_mapping[song_id].append(playlist_id)
+    return response
 
 
 def post_message_target(state: str | None) -> str:
@@ -142,6 +161,7 @@ def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
     }
     prompts.append(stored_prompt)
     print("Received prompt:", stored_prompt["text"])
+    # WIP: Wait for the agent to fetch the descriptions, then send to the client
     return {"message": "Prompt received successfully", "prompt": stored_prompt}
 
 
@@ -188,15 +208,86 @@ def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any
             content={"message": "input and output must be lists of playlist IDs"},
         )
     
+    # store the raw selections as received (could be list[str] or list[dict])
     selected_input_playlists = input_ids
     selected_output_playlists = output_ids
+
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+
+    # now fetch the tracks for each input playlist and store in the dict
+    for entry in input_ids:
+        # accept either a plain id string or an object like {id:..., name:...}
+        playlist_id = entry.get("id") if isinstance(entry, dict) else entry
+        if not playlist_id:
+            print("Skipping invalid playlist entry:", entry)
+            continue
+
+        tracks_resp = fetch_playlist_tracks(stored_access_token, playlist_id)
+        try:
+            raw_items = tracks_resp.json().get("items", [])
+        except Exception:
+            raw_items = []
+
+        # Normalize items into a list of simple track dicts for easier use by the agent
+        parsed_tracks: list[Parsed_song] = []
+        for itm in raw_items:
+            track = None
+            if isinstance(itm, dict):
+                # Spotify sometimes returns the track under 'track', sometimes under 'item'
+                track = itm.get("track") or itm.get("item") or None
+            if not track or not isinstance(track, dict):
+                continue
+            track_id = track.get("id")
+            if not track_id:
+                continue
+
+            artists = [a.get("name") for a in track.get("artists", []) if isinstance(a, dict)]
+            album = track.get("album") or {}
+            album_id = album.get("id") if isinstance(album, dict) else None
+
+            parsed = Parsed_song(
+                id=track_id,
+                name=track.get("name"),
+                artists=artists,
+                album_id=album_id,
+                duration_ms=track.get("duration_ms"),
+                external_urls=track.get("external_urls"),
+                uri=track.get("uri"),
+            )
+            parsed_tracks.append(parsed)
+
+            # update songs_to_playlist_mapping (avoid duplicates)
+            if track_id not in songs_to_playlist_mapping:
+                songs_to_playlist_mapping[track_id] = []
+            if playlist_id not in songs_to_playlist_mapping[track_id]:
+                songs_to_playlist_mapping[track_id].append(playlist_id)
+
+        print(f"Fetched {len(parsed_tracks)} tracks for playlist {playlist_id}:")
+        print(parsed_tracks)
+        playlist_songs_dict[playlist_id] = parsed_tracks
+    
     
     print(f"Received selected playlists - Input: {input_ids}, Output: {output_ids}")
+
+    # now create a list of songs to sort from the input playlists (flatten all tracks from all input playlists into one list)
+    songs_to_sort = []
+    for pid in input_ids:
+        # accept either a plain id string or an object like {id:..., name:...}
+        playlist_id = pid.get("id") if isinstance(pid, dict) else pid
+        if not playlist_id:
+            continue
+        songs = playlist_songs_dict.get(playlist_id, [])
+        songs_to_sort.extend(songs)
     
     return {
         "message": "Playlists selected successfully",
         "input": input_ids,
         "output": output_ids,
+        "songs_to_sort": songs_to_sort,
     }
 
 
