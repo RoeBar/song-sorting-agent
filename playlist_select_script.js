@@ -71,8 +71,14 @@ function submitPlaylists() {
     const inputChecked = document.querySelectorAll('input[id^="playlist-input-"]:checked');
     const outputChecked = document.querySelectorAll('input[id^="playlist-output-"]:checked');
 
-    const inputIds = Array.from(inputChecked).map(n => n.value);
-    const outputIds = Array.from(outputChecked).map(n => n.value);
+    const inputIds = Array.from(inputChecked).map(n => ({
+        id: n.value,
+        name: n.parentElement.querySelector('.playlist-name').textContent
+    }));
+    const outputIds = Array.from(outputChecked).map(n => ({
+        id: n.value,
+        name: n.parentElement.querySelector('.playlist-name').textContent
+    }));
 
     const payload = { input: inputIds, output: outputIds };
 
@@ -107,5 +113,6 @@ function submitPlaylists() {
     })
     .finally(() => {
         if (submitBtn) submitBtn.disabled = false;
+        window.location.href = `prompt_page.html`;
     });
 }
