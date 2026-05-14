@@ -21,7 +21,7 @@ function SendPrompt(event) {
         // re-enable the submit button
         gotResponse();
         // redirect to the song list page with the song lists as a query parameter
-        window.location.href = `playlist_descriptions.html`;
+        window.location.href = `playlist_descriptions.html?output=${encodeURIComponent(JSON.stringify(data.output))}`;
     })
     .catch(error => {
         console.error('Error:', error);

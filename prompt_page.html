@@ -14,11 +14,18 @@
             <p>This is where you can input your sorting criteria for your Spotify playlists.</p>
             <form id="prompt-form">
                 <label for="criteria">Sorting Criteria:</label><br>
-                <textarea id="criteria" name="criteria" placeholder="e.g., sort by tempo" rows="4" cols="50"></textarea><br><br>
+                <div class="textarea-wrapper">
+                    <div class="preset-components">
+                        <button type="button" class="preset-btn" onclick="fillPreset('sort by tempo')">Sort by Tempo</button>
+                        <button type="button" class="preset-btn" onclick="fillPreset('sort by energy')">Sort by Energy</button>
+                        <button type="button" class="preset-btn" onclick="fillPreset('sort by danceability')">Sort by Danceability</button>
+                    </div>
+                    <textarea id="criteria" name="criteria" placeholder="e.g., sort by tempo" rows="4" cols="50"></textarea>
+                </div>
+                <br>
                 <input type="submit" value="Continue" class="submit-btn">
             </form>
         </div>
-    </div>
     <script src="prompt_script.js"></script>
 </body>
 </html>
