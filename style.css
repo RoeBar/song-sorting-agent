@@ -1,0 +1,144 @@
+/* General page styling */
+body {
+    background-color: #121212;
+    color: #E0E0E0;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 2em;
+    margin: 0;
+}
+
+/* Headline */
+h1 {
+    font-weight: bold;
+    font-size: 2.2em;
+    margin-bottom: 1em;
+    border-bottom: 3px solid #1DB954; /* Switched to official Spotify green */
+    display: inline-block;
+    padding-bottom: 5px;
+    color: #FFFFFF;
+}
+
+/* Layout Containers */
+.container {
+    max-width: 90%;
+    margin: 0 auto;
+}
+
+.card {
+    background-color: #1E1E1E;
+    padding: 2em;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+h2 {
+    margin-top: 0;
+    color: #FFFFFF;
+    font-size: 1.4em;
+}
+
+p {
+    color: #B3B3B3;
+    font-size: 0.95em;
+    margin-bottom: 1.5em;
+}
+
+.divider {
+    margin: 1.5em 0;
+    color: #888;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    display: flex;
+    align-items: center;
+}
+
+.divider::before, .divider::after {
+    content: "";
+    flex: 1;
+    border-bottom: 1px solid #333;
+    margin: 0 10px;
+}
+
+/* Spotify Auth Button */
+.spotify-auth-btn {
+    background-color: #1DB954; /* Official Spotify Green */
+    color: white;
+    text-decoration: none;
+    padding: 14px 28px;
+    border-radius: 50px; /* Pill shape is standard for Spotify auth */
+    font-weight: bold;
+    display: inline-block;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.spotify-auth-btn:hover {
+    background-color: #1ed760; /* Lighter hover state */
+    transform: scale(1.05);
+}
+
+/* File input */
+input[type="file"] {
+    background-color: #121212;
+    color: #E0E0E0;
+    border: 1px solid #444;
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 0.5em;
+    width: 80%;
+    cursor: pointer;
+}
+
+/* Upload button */
+.submit-btn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 1.5em;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+
+/* Upload button */
+.reject-btn {
+    background-color: #f44336; /* Red color for reject */
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 1.5em;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+
+/* Hover effect */
+button[type="submit"]:hover {
+    background-color: #45a049;
+    transform: scale(1.05); /* slight pop effect */
+}
+
+textarea {
+    width: 80%;
+    height: 150px;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    background-color: #121212;
+    color: #E0E0E0;
+    margin-top: 1em;
+}
+
+.song-description {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    padding: 1em;
+    border-radius: 10px;
+    margin-bottom: -1rem;
+}

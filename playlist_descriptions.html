@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Song Sorting Agent</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Playlist Descriptions</h1>
+    <div class="container">
+        <div class="card">
+            <h2>Your Playlist Descriptions</h2>
+            <p>Here you can describe your playlists.</p>
+            <!-- Playlist descriptions will be populated dynamically -->
+            <div class="songlist-container">
+        </div>
+        <!-- A submit button and reject button next to each other -->
+        <div class="submit-container" style="align-items: center; display: flex; justify-content: center; gap: 1em; margin-top: 1em;">
+            <button class="submit-btn" onclick="submitDescriptions()">Submit Descriptions</button>
+            <button class="reject-btn" onclick="rejectDescriptions()">Reject and Go Back</button>
+        </div>
+    </div>
+</body>
+<script>
+    // This script will run when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        // Get the song lists from the query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const songLists = urlParams.get('songLists') || 2; // default to 2 if not provided
+
+        const container = document.querySelector('.songlist-container');
+        // each song list will be a textarea with the name of the song list as the title
+        for (let i = 1; i <= songLists; i++) {
+            const listDiv = document.createElement('div');
+            listDiv.innerHTML = `<h3 class="song-description">Playlist Description ${i}</h3><textarea rows="10" cols="50" placeholder="Enter description for this playlist..."></textarea>`;
+            container.appendChild(listDiv);
+        }
+    });
+    // fetch the song descriptions from the server and populate the textareas with the descriptions
+    fetch('http://localhost:3000/playlist_descriptions')
+        .then(response => response.json())
+        .then(data => {
+            const descriptions = data.descriptions || [];
+            const textareas = document.querySelectorAll('.songlist-container textarea');
+            textareas.forEach((textarea, index) => {
+                if (descriptions[index]) {
+                    textarea.value = descriptions[index];
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching playlist descriptions:', error);
+        });
+    function submitDescriptions() {
+        const textareas = document.querySelectorAll('.songlist-container textarea');
+        const descriptions = Array.from(textareas).map(textarea => textarea.value);
+        // send the descriptions to the server
+        fetch('http://localhost:3000/submit_descriptions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ descriptions })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Response from server:', data);
+            alert('Descriptions submitted successfully!');
+        })
+        .catch(error => {
+            console.error('Error submitting descriptions:', error);
+            alert('Error submitting descriptions. Please try again.');
+        });
+    }
+
+    function rejectDescriptions() {
+        // if the user rejects the descriptions, go back to the prompt page
+        window.location.href = 'prompt_page.html';
+    }
+</script>
+</html>
