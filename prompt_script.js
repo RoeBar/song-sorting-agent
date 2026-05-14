@@ -21,7 +21,7 @@ function SendPrompt(event) {
         // re-enable the submit button
         gotResponse();
         // redirect to the song list page with the song lists as a query parameter
-        // window.location.href = `playlist_select.html`;
+        window.location.href = `playlist_descriptions.html`;
     })
     .catch(error => {
         console.error('Error:', error);
