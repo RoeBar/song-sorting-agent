@@ -169,7 +169,7 @@ def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
 def playlist_descriptions(
     songLists: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    value: Any = songLists if songLists else 2
+    value: Any = songLists if songLists else len(selected_output_playlists)
     return {"songLists": value}
 
 
