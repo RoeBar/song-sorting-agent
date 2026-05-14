@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Song Sorting Agent</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Song Sorting Agent</h1>
+
+    <div class="container">
+        <!-- Spotify OAuth Section -->
+        <div class="card auth-section">
+            <h2>Connect to Spotify</h2>
+            <p>For the app to edit your playlists, you need to connect your Spotify account.</p>
+            <a href="#" class="spotify-auth-btn" onclick="loginWithSpotify()">Log in with Spotify</a>
+                    
+            <script>
+            function loginWithSpotify() {
+                const width = 500, height = 700;
+                const left = (screen.width / 2) - (width / 2);
+                const top = (screen.height / 2) - (height / 2);
+            
+                // Open the popup pointing to your backend login route
+                const popup = window.open(
+                    'http://127.0.0.1:3000/login',
+                    'Spotify Login', 
+                    `width=${width},height=${height},top=${top},left=${left}`
+                );
+            
+                // Listen for the message from the popup when login is successful
+                window.addEventListener('message', (event) => {
+                    if (event.data.type === 'SPOTIFY_AUTH_SUCCESS') {
+                        console.log('Access Token Received:', event.data.accessToken);
+                        alert('Logged in successfully!');
+                        // now move onto the next page
+                        window.location.href = 'prompt_page.html';
+                    }
+                }, false);
+            }
+            </script>
+        </div>
+    </div>
+</body>
+</html>
