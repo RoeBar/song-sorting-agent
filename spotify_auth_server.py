@@ -24,6 +24,8 @@ ALLOWED_CLIENT_ORIGINS = frozenset(
 prompts: list[dict[str, Any]] = []
 playlists: list[Any] = []
 stored_access_token: str | None = None
+selected_input_playlists: list[str] = []
+selected_output_playlists: list[str] = []
 
 app = FastAPI()
 
@@ -36,18 +38,22 @@ app.add_middleware(
 
 
 def fetch_user_playlists(access_token: str) -> requests.Response:
-    return requests.get(
-        "https://api.spotify.com/v1/me/playlists",
-        headers={"Authorization": "Bearer " + access_token},
-        timeout=30,
+    url = "https://api.spotify.com/v1/me/playlists" 
+    
+    result = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=60,
     )
-
+    
+    print(result.text) 
+    return result
 
 def fetch_playlist_tracks(access_token: str, playlist_id: str) -> requests.Response:
     return requests.get(
         f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
-        headers={"Authorization": "Bearer " + access_token},
-        timeout=30,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=60,
     )
 
 
@@ -59,7 +65,7 @@ def post_message_target(state: str | None) -> str:
 
 @app.get("/login")
 def login(origin: str | None = Query(default=None)) -> RedirectResponse:
-    scope = "user-read-private user-read-email user-library-read"
+    scope = "user-read-private user-read-email user-library-read playlist-read-private playlist-read-collaborative"
     oauth_state = post_message_target(origin)
     auth_url = (
         "https://accounts.spotify.com/authorize"
@@ -162,6 +168,36 @@ def get_playlists() -> dict[str, Any] | JSONResponse:
     if not spotify_resp.ok:
         return JSONResponse(status_code=spotify_resp.status_code, content=body)
     return body
+
+
+@app.get("/select_playlist_tracks", )
+def select_playlist_tracks() -> dict[str, Any]:
+    return {}
+
+
+@app.post("/selected_playlists", response_model=None)
+def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
+    global selected_input_playlists, selected_output_playlists
+    
+    input_ids = body.get("input", [])
+    output_ids = body.get("output", [])
+    
+    if not isinstance(input_ids, list) or not isinstance(output_ids, list):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "input and output must be lists of playlist IDs"},
+        )
+    
+    selected_input_playlists = input_ids
+    selected_output_playlists = output_ids
+    
+    print(f"Received selected playlists - Input: {input_ids}, Output: {output_ids}")
+    
+    return {
+        "message": "Playlists selected successfully",
+        "input": input_ids,
+        "output": output_ids,
+    }
 
 
 if __name__ == "__main__":
