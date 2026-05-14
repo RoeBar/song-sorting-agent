@@ -23,8 +23,11 @@
                 const top = (screen.height / 2) - (height / 2);
             
                 // Open the popup pointing to your backend login route
+                const loginUrl =
+                    'http://127.0.0.1:3000/login?origin=' +
+                    encodeURIComponent(window.location.origin);
                 const popup = window.open(
-                    'http://127.0.0.1:3000/login',
+                    loginUrl,
                     'Spotify Login', 
                     `width=${width},height=${height},top=${top},left=${left}`
                 );

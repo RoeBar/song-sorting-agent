@@ -1,10 +1,33 @@
+const API_BASE = 'http://127.0.0.1:3000';
+
 function fetchPlaylists() {
-    fetch('http://localhost:3000/playlists')
-        .then(response => response.json())
-        .then(data => {
-            // each playlist should have a name, and a checkbox next to it
-            const playlists = data.playlists || [];
-            const container = document.querySelector('.songlist-container');
+    const container = document.querySelector('.songlist-container');
+    if (!container) {
+        console.error('Missing .songlist-container element');
+        return;
+    }
+
+    fetch(`${API_BASE}/playlists`)
+        .then(async (response) => {
+            const text = await response.text();
+            let data;
+            try {
+                data = text ? JSON.parse(text) : {};
+            } catch {
+                throw new Error('Invalid response from server');
+            }
+            if (!response.ok) {
+                const msg =
+                    data.message ||
+                    (response.status === 401
+                        ? 'Not logged in. Open auth_page.html and connect Spotify first, then try again.'
+                        : 'Request failed');
+                throw new Error(msg);
+            }
+            return data;
+        })
+        .then((data) => {
+            const playlists = data.items || data.playlists || [];
             container.innerHTML = '';
             playlists.forEach((playlist, index) => {
                 const playlistDiv = document.createElement('div');
@@ -14,16 +37,15 @@ function fetchPlaylists() {
                     <label for="playlist-${index}">${playlist.name}</label>
                 `;
                 container.appendChild(playlistDiv);
-            }
-            );
-        }
-        )
-        .catch(error => {
+            });
+        })
+        .catch((error) => {
             console.error('Error fetching playlists:', error);
-             const container = document.querySelector('.songlist-container');
-             container.innerHTML = '<p>Error fetching playlists. Please try again later.</p>';
-        }
-    );
+            container.innerHTML =
+                '<p>Error fetching playlists. ' +
+                (error.message ? String(error.message) : 'Please try again later.') +
+                '</p>';
+        });
 }
 
 document.addEventListener('DOMContentLoaded', fetchPlaylists);

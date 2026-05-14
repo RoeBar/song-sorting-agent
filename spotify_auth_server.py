@@ -17,14 +17,19 @@ CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET")
 REDIRECT_URI = "http://127.0.0.1:3000/callback"
 
+ALLOWED_CLIENT_ORIGINS = frozenset(
+    {"http://127.0.0.1:5500", "http://localhost:5500"}
+)
+
 prompts: list[dict[str, Any]] = []
 playlists: list[Any] = []
+stored_access_token: str | None = None
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5500"],
+    allow_origins=list(ALLOWED_CLIENT_ORIGINS),
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
@@ -46,20 +51,35 @@ def fetch_playlist_tracks(access_token: str, playlist_id: str) -> requests.Respo
     )
 
 
+def post_message_target(state: str | None) -> str:
+    if state and state in ALLOWED_CLIENT_ORIGINS:
+        return state
+    return "http://127.0.0.1:5500"
+
+
 @app.get("/login")
-def login() -> RedirectResponse:
+def login(origin: str | None = Query(default=None)) -> RedirectResponse:
     scope = "user-read-private user-read-email user-library-read"
+    oauth_state = post_message_target(origin)
     auth_url = (
         "https://accounts.spotify.com/authorize"
         f"?response_type=code&client_id={CLIENT_ID}"
         f"&scope={quote(scope, safe='')}"
         f"&redirect_uri={quote(REDIRECT_URI, safe='')}"
+        f"&state={quote(oauth_state, safe='')}"
     )
     return RedirectResponse(url=auth_url, status_code=302)
 
 
 @app.get("/callback", response_model=None)
-def callback(code: str | None = Query(default=None)) -> HTMLResponse | PlainTextResponse:
+def callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+) -> HTMLResponse | PlainTextResponse:
+    if not code:
+        return PlainTextResponse("Authentication Error: missing code", status_code=400)
+    target_origin = post_message_target(state)
+    global stored_access_token
     try:
         basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
         token_resp = requests.post(
@@ -77,14 +97,16 @@ def callback(code: str | None = Query(default=None)) -> HTMLResponse | PlainText
         )
         token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
+        stored_access_token = access_token
         token_js = json.dumps(access_token)
+        target_js = json.dumps(target_origin)
         html = f"""
             <script>
                 try {{
                     window.opener.postMessage({{
                         type: 'SPOTIFY_AUTH_SUCCESS',
                         accessToken: {token_js}
-                    }}, 'http://127.0.0.1:5500');
+                    }}, {target_js});
                     window.close();
                 }} catch (e) {{
                     console.error("Message failed:", e);
@@ -125,13 +147,25 @@ def playlist_descriptions(
     return {"songLists": value}
 
 
+@app.get("/playlists", response_model=None)
+def get_playlists() -> dict[str, Any] | JSONResponse:
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+    spotify_resp = fetch_user_playlists(stored_access_token)
+    try:
+        body = spotify_resp.json()
+    except Exception:
+        body = {"message": spotify_resp.text}
+    if not spotify_resp.ok:
+        return JSONResponse(status_code=spotify_resp.status_code, content=body)
+    return body
+
+
 if __name__ == "__main__":
     import uvicorn
 
     print("Server running on http://localhost:3000")
     uvicorn.run(app, host="127.0.0.1", port=3000)
-
-
-@app.get("/playlists")
-def get_playlists() -> dict[str, Any]:
-    return fetch_user_playlists("ACCESS_TOKEN").json()
