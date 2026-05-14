@@ -20,6 +20,10 @@
             </div>
             <p id="sort-status" class="empty-hint" style="display: none; text-align: center; margin-top: 0.75em;" aria-live="polite"></p>
             <div id="sort-results"></div>
+            <div id="sort-confirm-actions" style="display: none; align-items: center; justify-content: center; gap: 1em; margin-top: 1.5em; flex-wrap: wrap;">
+                <button type="button" class="submit-btn" onclick="confirmExecuteSort()">Confirm and execute</button>
+                <button type="button" class="reject-btn" onclick="rejectSortedPlan()">Reject</button>
+            </div>
         </div>
     </div>
 </body>
@@ -130,10 +134,76 @@
             section.appendChild(ul);
             el.appendChild(section);
         }
+
+        const actions = document.getElementById('sort-confirm-actions');
+        if (actions) {
+            actions.style.display = 'flex';
+        }
+    }
+
+    function hideSortConfirmActions() {
+        const actions = document.getElementById('sort-confirm-actions');
+        if (actions) {
+            actions.style.display = 'none';
+        }
+    }
+
+    function confirmExecuteSort() {
+        const confirmBtn = document.querySelector('#sort-confirm-actions .submit-btn');
+        const rejectBtn = document.querySelector('#sort-confirm-actions .reject-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+        }
+        if (rejectBtn) {
+            rejectBtn.disabled = true;
+        }
+        fetch('http://localhost:3000/execute_pending_sort', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    const msg = data.message || 'Execute failed.';
+                    const extra =
+                        data.errors && data.errors.length
+                            ? '\n' + data.errors.map((e) => e.name || e.playlist_id).join(', ')
+                            : '';
+                    alert(msg + extra);
+                    return;
+                }
+                alert(data.message || 'Playlists updated in Spotify.');
+                hideSortConfirmActions();
+            })
+            .catch((err) => {
+                console.error(err);
+                alert('Could not reach the server to execute.');
+            })
+            .finally(() => {
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                }
+                if (rejectBtn) {
+                    rejectBtn.disabled = false;
+                }
+            });
+    }
+
+    function rejectSortedPlan() {
+        fetch('http://localhost:3000/reject_pending_sort', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+            .catch(() => {})
+            .finally(() => {
+                hideSortConfirmActions();
+                window.location.href = 'prompt_page.html';
+            });
     }
 
     function submitDescriptions() {
-        const submitBtn = document.querySelector('.submit-btn');
+        hideSortConfirmActions();
+        const submitBtn = document.querySelector('.submit-container .submit-btn');
         const statusEl = document.getElementById('sort-status');
         const textareas = document.querySelectorAll('.songlist-container textarea');
         const descriptions = Array.from(textareas).map((textarea) => ({
@@ -192,8 +262,14 @@
     }
 
     function rejectDescriptions() {
-        // if the user rejects the descriptions, go back to the prompt page
-        window.location.href = 'prompt_page.html';
+        fetch('http://localhost:3000/reject_pending_sort', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+            .catch(() => {})
+            .finally(() => {
+                window.location.href = 'prompt_page.html';
+            });
     }
 </script>
 </html>

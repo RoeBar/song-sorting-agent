@@ -42,6 +42,9 @@ final_playlist_descriptions: dict[str, str] = {}
 
 songs_to_playlist_mapping: dict[str, list[str]] = {}
 
+# After a successful submit_descriptions sort: playlist_id -> Spotify track URIs to write on confirm
+pending_execute_playlists: dict[str, list[str]] | None = None
+
 app = FastAPI()
 
 app.add_middleware(
@@ -131,9 +134,55 @@ def post_message_target(state: str | None) -> str:
     return "http://127.0.0.1:5500"
 
 
+def _track_uri_for_sort_id(song_lookup: dict[str, Parsed_song], sid: Any) -> str | None:
+    sid_s = str(sid) if sid is not None else ""
+    if not sid_s:
+        return None
+    ps = song_lookup.get(sid_s)
+    if ps and ps.uri:
+        return str(ps.uri)
+    return f"spotify:track:{sid_s}"
+
+
+def _spotify_replace_then_append_tracks(
+    access_token: str, playlist_id: str, uris: list[str]
+) -> requests.Response | None:
+    """Replace playlist contents with uris (batched: first chunk replaces, rest POST)."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    if not uris:
+        return None
+    chunks = [uris[i : i + 100] for i in range(0, len(uris), 100)]
+    first = chunks[0]
+    r = requests.put(
+        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+        headers=headers,
+        json={"uris": first},
+        timeout=60,
+    )
+    if not r.ok:
+        return r
+    for chunk in chunks[1:]:
+        r2 = requests.post(
+            f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+            headers=headers,
+            json={"uris": chunk},
+            timeout=60,
+        )
+        if not r2.ok:
+            return r2
+    return r
+
+
 @app.get("/login")
 def login(origin: str | None = Query(default=None)) -> RedirectResponse:
-    scope = "user-read-private user-read-email user-library-read playlist-read-private playlist-read-collaborative"
+    scope = (
+        "user-read-private user-read-email user-library-read "
+        "playlist-read-private playlist-read-collaborative "
+        "playlist-modify-public playlist-modify-private"
+    )
     oauth_state = post_message_target(origin)
     auth_url = (
         "https://accounts.spotify.com/authorize"
@@ -317,7 +366,7 @@ def playlist_descriptions() -> JSONResponse:
 
 @app.post("/submit_descriptions", response_model=None)
 def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
-    global final_playlist_descriptions
+    global final_playlist_descriptions, pending_execute_playlists
 
     rows = body.get("descriptions")
     if not isinstance(rows, list):
@@ -380,6 +429,8 @@ def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JS
             }
         )
 
+    pending_execute_playlists = None
+
     try:
         raw_sort = run_song_sort(
             json.dumps(playlists_json),
@@ -417,6 +468,7 @@ def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JS
             "id": ps.id,
             "name": ps.name,
             "artists": ps.artists or [],
+            "uri": ps.uri,
         }
 
     result_playlists: list[dict[str, Any]] = []
@@ -431,7 +483,14 @@ def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JS
             if ps:
                 songs_out.append(_song_payload(ps))
             else:
-                songs_out.append({"id": sid_s, "name": None, "artists": []})
+                songs_out.append(
+                    {
+                        "id": sid_s,
+                        "name": None,
+                        "artists": [],
+                        "uri": f"spotify:track:{sid_s}",
+                    }
+                )
         result_playlists.append(
             {
                 "playlist_id": pid,
@@ -439,6 +498,19 @@ def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JS
                 "songs": songs_out,
             }
         )
+
+    pending: dict[str, list[str]] = {}
+    for pid in output_ids_ordered:
+        ids = parsed_sort.get(pid)
+        if not isinstance(ids, list):
+            ids = []
+        uris: list[str] = []
+        for sid in ids:
+            u = _track_uri_for_sort_id(song_lookup, sid)
+            if u:
+                uris.append(u)
+        pending[pid] = uris
+    pending_execute_playlists = pending
 
     unmatched: list[dict[str, Any]] = []
     for sid, ps in song_lookup.items():
@@ -454,6 +526,89 @@ def submit_descriptions(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JS
         },
     }
 
+
+@app.post("/execute_pending_sort", response_model=None)
+def execute_pending_sort() -> dict[str, Any] | JSONResponse:
+    global pending_execute_playlists, stored_access_token
+
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+    if not pending_execute_playlists:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "No pending sort to execute. Submit descriptions and wait for sorted results first.",
+            },
+        )
+
+    headers = {
+        "Authorization": f"Bearer {stored_access_token}",
+        "Content-Type": "application/json",
+    }
+    errors: list[dict[str, Any]] = []
+    updated: list[dict[str, Any]] = []
+
+    for pid, uris in pending_execute_playlists.items():
+        name = playlist_id_to_name.get(pid, pid)
+        if uris:
+            r = _spotify_replace_then_append_tracks(stored_access_token, pid, uris)
+            if r is not None and not r.ok:
+                errors.append(
+                    {
+                        "playlist_id": pid,
+                        "name": name,
+                        "status": r.status_code,
+                        "detail": r.text,
+                    }
+                )
+                continue
+        else:
+            r_clear = requests.put(
+                f"https://api.spotify.com/v1/playlists/{pid}/tracks",
+                headers=headers,
+                json={"uris": []},
+                timeout=60,
+            )
+            if not r_clear.ok:
+                errors.append(
+                    {
+                        "playlist_id": pid,
+                        "name": name,
+                        "status": r_clear.status_code,
+                        "detail": r_clear.text,
+                    }
+                )
+                continue
+        updated.append({"playlist_id": pid, "name": name, "track_count": len(uris)})
+
+    if errors:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "ok": False,
+                "message": "Some playlists could not be updated in Spotify.",
+                "updated": updated,
+                "errors": errors,
+            },
+        )
+
+    pending_execute_playlists = None
+    return {
+        "ok": True,
+        "message": "Playlists updated in Spotify.",
+        "updated": updated,
+    }
+
+
+@app.post("/reject_pending_sort", response_model=None)
+def reject_pending_sort() -> dict[str, Any]:
+    global pending_execute_playlists
+
+    pending_execute_playlists = None
+    return {"ok": True, "message": "Pending sort discarded."}
 
 
 @app.get("/playlists", response_model=None)
@@ -482,6 +637,7 @@ def select_playlist_tracks() -> dict[str, Any]:
 def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
     global selected_input_playlists, selected_output_playlists
     global generated_playlist_descriptions, final_playlist_descriptions
+    global pending_execute_playlists
 
     input_ids = body.get("input", [])
     output_ids = body.get("output", [])
@@ -497,6 +653,7 @@ def submit_selected_playlists(body: dict[str, Any] = Body(...)) -> dict[str, Any
     selected_output_playlists = output_ids
     generated_playlist_descriptions = []
     final_playlist_descriptions = {}
+    pending_execute_playlists = None
 
     if not stored_access_token:
         return JSONResponse(
