@@ -3,15 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Song Sorting Agent</title>
+    <title>Song Sorting Agent - Select Playlists</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Playlist select page</h1>
-    <div class="container">
-        <!-- This page gets the user's playlists from server and allows them to filter the list  -->
-        <div class="songlist-container"></div>
+    <div class="main-wrapper">
+        <h1>Select Playlists</h1>
+        <p class="subtitle">Choose the playlists you want to sort and analyze.</p>
+        
+        <div class="container">
+            <div class="playlist-columns">
+                <div class="playlist-column">
+                    <h2 class="column-title">Input</h2>
+                    <div class="songlist-container" id="songlist-input">
+                        <p class="loading-text">Loading your playlists...</p>
+                    </div>
+                </div>
+                <div class="playlist-column">
+                    <h2 class="column-title">Output</h2>
+                    <div class="songlist-container" id="songlist-output">
+                        <p class="loading-text">Loading your playlists...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="submit-status" class="submit-status" aria-live="polite"></div>
+        <button class="submit-btn" onclick="submitPlaylists()">Continue</button>
     </div>
+
     <script src="playlist_select_script.js"></script>
 </body>
 </html>

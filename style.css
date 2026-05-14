@@ -142,3 +142,93 @@ textarea {
     border-radius: 10px;
     margin-bottom: -1rem;
 }
+
+/* Two-column layout for Input / Output side-by-side */
+.playlist-columns {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+}
+
+.playlist-column {
+    flex: 1 1 45%;
+    min-width: 260px;
+}
+
+.column-title {
+    margin: 0 0 8px 0;
+    color: #FFFFFF;
+    font-size: 1.0em;
+}
+
+.submit-status {
+    min-height: 1.2em;
+    color: #E0E0E0;
+    margin-top: 12px;
+    font-weight: bold;
+}
+
+/* The Container for the Slabs */
+.songlist-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* This creates the distinct space between slabs */
+    margin-bottom: 2.5em;
+    text-align: left;
+}
+
+/* Individual Slab Styling */
+.playlist-item {
+    background-color: #282828;
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease, border-color 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.playlist-item:hover {
+    background-color: #3E3E3E;
+}
+
+/* Active/Checked state styling */
+.playlist-item.selected {
+    border-color: #1DB954;
+    background-color: #2a3b2e; /* Slight green tint */
+}
+
+/* Hide default HTML checkbox but keep it in the DOM for data */
+.playlist-item input[type="checkbox"] {
+    display: none;
+}
+
+/* Custom Checkbox Circle */
+.custom-checkbox {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #b3b3b3;
+    border-radius: 50%;
+    margin-right: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+/* When the slab is selected, style the custom checkbox */
+.playlist-item.selected .custom-checkbox {
+    background-color: #1DB954;
+    border-color: #1DB954;
+}
+
+.playlist-item.selected .custom-checkbox::after {
+    content: "✓";
+    color: #121212;
+    font-weight: bold;
+    font-size: 14px;
+}
