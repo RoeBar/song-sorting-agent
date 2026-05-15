@@ -15,17 +15,15 @@
             <form id="prompt-form">
                 <label for="criteria">Sorting Criteria:</label><br>
                 <div class="textarea-wrapper">
-                    <div class="preset-components">
-                        <button type="button" class="preset-btn" onclick="fillPreset('sort by tempo')">Sort by Tempo</button>
-                        <button type="button" class="preset-btn" onclick="fillPreset('sort by energy')">Sort by Energy</button>
-                        <button type="button" class="preset-btn" onclick="fillPreset('sort by danceability')">Sort by Danceability</button>
-                    </div>
                     <textarea id="criteria" name="criteria" placeholder="e.g., sort by tempo" rows="4" cols="50"></textarea>
                 </div>
-                <br>
-                <input type="submit" value="Continue" class="submit-btn">
+                <div class="prompt-actions" style="display: flex; gap: 1em; align-items: center; flex-wrap: wrap; margin-top: 0.75em;">
+                    <button type="button" id="magic-sort-btn" class="preset-btn">Magic sort</button>
+                    <input type="submit" value="Continue" class="submit-btn">
+                </div>
             </form>
         </div>
+    </div>
     <script src="prompt_script.js"></script>
 </body>
 </html>
