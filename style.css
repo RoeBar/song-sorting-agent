@@ -272,3 +272,31 @@ textarea {
 .preset-btn:hover {
     transform: scale(1.02);
 }
+
+/* Align prompt action buttons with the textarea width */
+.prompt-actions {
+    width: 87%;
+    margin: 0 auto;
+    display: flex;
+    gap: 1em;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.75em;
+}
+
+/* Push the Continue button to the right edge of the actions area */
+.submit-btn {
+    margin-left: auto;
+    position: relative;
+    left: 20px;
+}
+
+button[id="magic-sort-btn"] {
+    background-color: #1DB954;
+    color: white;
+    border: none;
+    padding: 0.9em;
+    margin-left: 0;
+    margin-top: 1.5em;
+    margin-right: -1.5em;
+}
