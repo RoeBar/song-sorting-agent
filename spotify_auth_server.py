@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
+from auto_prompter import run_auto_prompter
 from parsed_songs import Parsed_song
 from playlist_describer import create_playlist_descriptions
 from sort_songs import sort_songs as run_song_sort
@@ -126,6 +127,39 @@ def _collect_deduped_input_songs() -> tuple[list[dict[str, Any]], dict[str, Pars
             if tid_s not in by_id:
                 by_id[tid_s] = t
     return [_song_to_llm_dict(s) for s in by_id.values()], by_id
+
+
+def _ordered_playlist_descriptions_from_parsed(
+    parsed: list[Any], output_ids: list[str]
+) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        rid = row.get("playlist_id")
+        if not rid:
+            continue
+        rid_s = str(rid)
+        by_id[rid_s] = {
+            "playlist_id": rid_s,
+            "name": row.get("name")
+            or playlist_id_to_name.get(rid_s, "Unknown playlist"),
+            "description": (row.get("description") or "").strip(),
+        }
+
+    ordered: list[dict[str, Any]] = []
+    for pid in output_ids:
+        if pid in by_id:
+            ordered.append(by_id[pid])
+        else:
+            ordered.append(
+                {
+                    "playlist_id": pid,
+                    "name": playlist_id_to_name.get(pid, "Unknown playlist"),
+                    "description": "",
+                }
+            )
+    return ordered
 
 
 def post_message_target(state: str | None) -> str:
@@ -327,36 +361,107 @@ def prompt(body: dict[str, Any] = Body(...)) -> dict[str, Any] | JSONResponse:
             content={"message": parsed[0].get("error", "Request rejected.")},
         )
 
-    by_id: dict[str, dict[str, Any]] = {}
-    for row in parsed:
-        if not isinstance(row, dict):
-            continue
-        rid = row.get("playlist_id")
-        if not rid:
-            continue
-        rid_s = str(rid)
-        by_id[rid_s] = {
-            "playlist_id": rid_s,
-            "name": row.get("name")
-            or playlist_id_to_name.get(rid_s, "Unknown playlist"),
-            "description": (row.get("description") or "").strip(),
-        }
-
-    ordered: list[dict[str, Any]] = []
-    for pid in output_ids:
-        if pid in by_id:
-            ordered.append(by_id[pid])
-        else:
-            ordered.append(
-                {
-                    "playlist_id": pid,
-                    "name": playlist_id_to_name.get(pid, "Unknown playlist"),
-                    "description": "",
-                }
-            )
-
+    ordered = _ordered_playlist_descriptions_from_parsed(parsed, output_ids)
     generated_playlist_descriptions = ordered
     return {"ok": True, "count": len(ordered)}
+
+
+@app.post("/magic_sort", response_model=None)
+def magic_sort() -> dict[str, Any] | JSONResponse:
+    global generated_playlist_descriptions, prompts
+
+    if not stored_access_token:
+        return JSONResponse(
+            status_code=401,
+            content={"message": "Not authenticated. Complete Spotify login first."},
+        )
+
+    if not selected_output_playlists:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "No output playlists selected. Complete playlist selection first.",
+            },
+        )
+
+    output_ids: list[str] = []
+    for entry in selected_output_playlists:
+        pid = _normalize_playlist_id(entry)
+        if pid:
+            output_ids.append(pid)
+
+    if not output_ids:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "No valid output playlist IDs."},
+        )
+
+    songs_list, _ = _collect_deduped_input_songs()
+    if not songs_list:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "No songs loaded from input playlists. Go back and select input playlists with tracks first.",
+            },
+        )
+
+    target_for_model: list[dict[str, str]] = []
+    for pid in output_ids:
+        name = playlist_id_to_name.get(pid, "Unknown playlist")
+        target_for_model.append({"playlist_id": pid, "name": name})
+
+    try:
+        suggested_prompt, raw = run_auto_prompter(
+            json.dumps(songs_list),
+            json.dumps(target_for_model),
+        )
+        parsed = json.loads(raw)
+    except RuntimeError as e:
+        return JSONResponse(status_code=502, content={"message": str(e)})
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Model returned invalid JSON."},
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=502,
+            content={"message": f"Magic sort failed: {e}"},
+        )
+
+    if not isinstance(parsed, list) or len(parsed) == 0:
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Empty model response."},
+        )
+
+    if (
+        len(parsed) == 1
+        and isinstance(parsed[0], dict)
+        and parsed[0].get("error")
+    ):
+        return JSONResponse(
+            status_code=400,
+            content={"message": parsed[0].get("error", "Request rejected.")},
+        )
+
+    ordered = _ordered_playlist_descriptions_from_parsed(parsed, output_ids)
+    generated_playlist_descriptions = ordered
+
+    stored_prompt = {
+        "text": suggested_prompt,
+        "createdAt": datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+    }
+    prompts.append(stored_prompt)
+    print("Magic sort suggested prompt:", stored_prompt["text"])
+
+    return {
+        "ok": True,
+        "count": len(ordered),
+        "suggested_prompt": suggested_prompt,
+    }
 
 
 @app.get("/playlist_descriptions")
