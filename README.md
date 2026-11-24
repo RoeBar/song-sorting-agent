@@ -44,19 +44,25 @@ pip install -r requirements.txt
 
 ### 2. Environment variables
 
-Create a `.env` file in the project root:
+Copy the template to a new `.env` file in the project root, then fill in your own keys:
 
-```env
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-OPENROUTER_API_KEY=your_openrouter_api_key
-
-# Optional
-OPENROUTER_MODEL=google/gemini-2.5-flash
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_HTTP_REFERER=
-OPENROUTER_APP_TITLE=song-sorting-agent
+```bash
+# Windows
+copy .env.example .env
+# macOS / Linux
+cp .env.example .env
 ```
+
+| Variable | Required | Where to get it |
+|----------|----------|-----------------|
+| `SPOTIFY_CLIENT_ID` | Yes | Spotify Developer Dashboard → your app → Settings |
+| `SPOTIFY_CLIENT_SECRET` | Yes | Same page (click **View client secret**) |
+| `OPENROUTER_API_KEY` | Yes | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_MODEL` | No | Default: `google/gemini-2.5-flash` |
+| `OPENROUTER_BASE_URL` | No | Default: `https://openrouter.ai/api/v1` |
+
+The code loads these with `python-dotenv` (`load_dotenv()`) and reads them with `os.environ.get(...)`.
+**Never commit your `.env` file** — it is listed in `.gitignore`.
 
 ### 3. Spotify app settings
 

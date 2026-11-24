@@ -1,1 +1,13 @@
+# Secrets: keep your real keys only in your local .env
 .env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+
+# Node
+node_modules/
